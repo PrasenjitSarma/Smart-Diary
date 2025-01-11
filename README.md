@@ -1,0 +1,2 @@
+# Smart-Diary
+Multilingual Diary
