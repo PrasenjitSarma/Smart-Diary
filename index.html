@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Complete Multilingual Voice Diary</title>
     
-    <!-- Enhanced font support -->
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Bengali:wght@400;700&display=swap" rel="stylesheet">
     
     <style>
@@ -257,12 +256,10 @@
             <button id="filterEntries">Filter</button>
         </div>
 
-        <div class="entry-list" id="entryList">
-            <!-- Entries will be dynamically added here -->
+        <div class="entry-list" id="entryList"
         </div>
 
         <div class="insights" id="insights">
-            <!-- Insights will be dynamically added here -->
         </div>
     </div>
 
@@ -279,7 +276,7 @@ class DiaryApp {
         this.recordingTimer = null;
         this.recordingDuration = 0;
         
-        // Language settings initialization
+       
         this.languageSettings = {
             'en-US': {
                 label: 'English',
@@ -606,7 +603,6 @@ class DiaryApp {
     }
 }
 
-// Initialize the app when the page loads
 window.addEventListener('load', () => {
     const app = new DiaryApp();
 }); 
