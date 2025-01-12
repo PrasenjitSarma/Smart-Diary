@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multilingual Voice Diary</title>
+    <title>Complete Multilingual Voice Diary</title>
+    
+    <!-- Enhanced font support -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Bengali:wght@400;700&display=swap" rel="stylesheet">
+    
     <style>
         :root {
             --primary-color: #4a90e2;
@@ -15,12 +19,27 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Noto Sans', sans-serif;
             margin: 0;
             padding: 20px;
             background-color: var(--secondary-color);
             color: var(--text-color);
             line-height: 1.6;
+        }
+
+        /* Language specific font styles */
+        .lang-hi {
+            font-family: 'Noto Sans Devanagari', sans-serif !important;
+            font-size: 1.1em;
+        }
+
+        .lang-as {
+            font-family: 'Noto Sans Bengali', sans-serif !important;
+            font-size: 1.1em;
+        }
+
+        .lang-en {
+            font-family: 'Noto Sans', sans-serif !important;
         }
 
         .container {
@@ -77,6 +96,53 @@
             background-color: #357abd;
         }
 
+        .recording-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .recording-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #e74c3c;
+            display: none;
+        }
+
+        .recording .recording-indicator {
+            display: block;
+            animation: pulse 1s infinite;
+        }
+
+        .recording-timer {
+            color: #e74c3c;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .audio-container {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .audio-player {
+            width: 100%;
+            margin: 5px 0;
+        }
+
+        .language-indicator {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: #e8f0fe;
+            margin-left: 10px;
+            font-size: 0.9em;
+        }
+
         .entry-list {
             margin-top: 30px;
         }
@@ -111,45 +177,6 @@
             margin-bottom: 20px;
         }
 
-        .recording-controls {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .recording-indicator {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background-color: #e74c3c;
-            display: none;
-        }
-
-        .recording .recording-indicator {
-            display: block;
-            animation: pulse 1s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.2); }
-            100% { transform: scale(1); }
-        }
-
-        .lock-screen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255,255,255,0.9);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-
         .insights {
             background: #f8f9fa;
             border-radius: 5px;
@@ -166,6 +193,13 @@
             color: white;
             border-radius: 5px;
             display: none;
+            z-index: 1000;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
         }
     </style>
 </head>
@@ -180,9 +214,10 @@
                 <label for="language">Select Language:</label>
                 <select id="language">
                     <option value="en-US">English</option>
-                    <option value="hi-IN">Hindi</option>
-                    <option value="as-IN">Assamese</option>
+                    <option value="hi-IN">हिंदी (Hindi)</option>
+                    <option value="as-IN">অসমীয়া (Assamese)</option>
                 </select>
+                <span id="currentLang" class="language-indicator"></span>
             </div>
 
             <div class="input-group">
@@ -198,6 +233,12 @@
             <button id="recordButton">Start Recording</button>
             <div class="recording-indicator"></div>
             <span id="recordingStatus"></span>
+            <span class="recording-timer" id="recordingTimer"></span>
+        </div>
+
+        <div class="audio-container" id="audioContainer" style="display: none;">
+            <audio id="audioPlayer" controls class="audio-player"></audio>
+            <button id="saveAudio">Save Audio</button>
         </div>
 
         <div class="input-group">
@@ -228,232 +269,347 @@
     <div class="notification" id="notification"></div>
 
     <script>
-        class DiaryApp {
-            constructor() {
-                this.entries = JSON.parse(localStorage.getItem('diaryEntries')) || [];
-                this.isRecording = false;
-                this.recognition = null;
-                this.audioRecorder = null;
-                this.setupEventListeners();
-                this.initializeSpeechRecognition();
-                this.loadEntries();
-                this.setupReminders();
-                this.checkLock();
-                this.updateInsights();
+class DiaryApp {
+    constructor() {
+        this.entries = JSON.parse(localStorage.getItem('diaryEntries')) || [];
+        this.isRecording = false;
+        this.recognition = null;
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.recordingTimer = null;
+        this.recordingDuration = 0;
+        
+        // Language settings initialization
+        this.languageSettings = {
+            'en-US': {
+                label: 'English',
+                fontClass: 'lang-en'
+            },
+            'hi-IN': {
+                label: 'हिंदी',
+                fontClass: 'lang-hi'
+            },
+            'as-IN': {
+                label: 'অসমীয়া',
+                fontClass: 'lang-as'
             }
+        };
 
-            initializeSpeechRecognition() {
-                if ('webkitSpeechRecognition' in window) {
-                    this.recognition = new webkitSpeechRecognition();
-                    this.recognition.continuous = true;
-                    this.recognition.interimResults = true;
+        this.setupEventListeners();
+        this.initializeSpeechRecognition();
+        this.loadEntries();
+        this.setupReminders();
+        this.checkLock();
+        this.updateInsights();
+        this.updateLanguageIndicator();
+    }
 
-                    this.recognition.onresult = (event) => {
-                        let finalTranscript = '';
-                        for (let i = event.resultIndex; i < event.results.length; i++) {
-                            if (event.results[i].isFinal) {
-                                finalTranscript += event.results[i][0].transcript;
-                            }
-                        }
-                        if (finalTranscript) {
-                            document.getElementById('entry-text').value += finalTranscript;
-                        }
+    initializeSpeechRecognition() {
+        if ('webkitSpeechRecognition' in window) {
+            this.recognition = new webkitSpeechRecognition();
+            this.recognition.continuous = true;
+            this.recognition.interimResults = true;
+
+            this.recognition.onstart = () => {
+                console.log('Speech recognition started');
+                this.updateLanguageIndicator();
+            };
+
+            this.recognition.onresult = (event) => {
+                let finalTranscript = '';
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                const textarea = document.getElementById('entry-text');
+                if (finalTranscript) {
+                    textarea.value += finalTranscript;
+                    this.updateTextAreaFont();
+                }
+            };
+
+            this.recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                this.showNotification('Speech recognition error: ' + event.error);
+            };
+        }
+    }
+
+    setupEventListeners() {
+        document.getElementById('recordButton').addEventListener('click', () => this.toggleRecording());
+        document.getElementById('saveEntry').addEventListener('click', () => this.saveEntry());
+        document.getElementById('saveAudio').addEventListener('click', () => this.saveAudioFile());
+        document.getElementById('search').addEventListener('input', (e) => this.searchEntries(e.target.value));
+        document.getElementById('filterEntries').addEventListener('click', () => this.filterByMonth());
+        document.getElementById('language').addEventListener('change', () => {
+            this.updateLanguage();
+            this.updateTextAreaFont();
+        });
+    }
+
+    updateLanguageIndicator() {
+        const currentLang = document.getElementById('language').value;
+        const langIndicator = document.getElementById('currentLang');
+        const settings = this.languageSettings[currentLang];
+        if (settings) {
+            langIndicator.textContent = settings.label;
+        }
+    }
+
+    updateTextAreaFont() {
+        const textarea = document.getElementById('entry-text');
+        const currentLang = document.getElementById('language').value;
+        
+        textarea.classList.remove('lang-en', 'lang-hi', 'lang-as');
+        const settings = this.languageSettings[currentLang];
+        if (settings) {
+            textarea.classList.add(settings.fontClass);
+        }
+    }
+
+    toggleRecording() {
+        if (!this.isRecording) {
+            this.startRecording();
+        } else {
+            this.stopRecording();
+        }
+    }
+
+    startRecording() {
+        if (document.getElementById('entry-type').value === 'voice') {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    this.mediaRecorder = new MediaRecorder(stream);
+                    this.audioChunks = [];
+                    
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        this.audioChunks.push(event.data);
                     };
-                }
-            }
 
-            setupEventListeners() {
-                document.getElementById('recordButton').addEventListener('click', () => this.toggleRecording());
-                document.getElementById('saveEntry').addEventListener('click', () => this.saveEntry());
-                document.getElementById('search').addEventListener('input', (e) => this.searchEntries(e.target.value));
-                document.getElementById('filterEntries').addEventListener('click', () => this.filterByMonth());
-                document.getElementById('language').addEventListener('change', () => this.updateLanguage());
-            }
+                    this.mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        const audioPlayer = document.getElementById('audioPlayer');
+                        audioPlayer.src = audioUrl;
+                        document.getElementById('audioContainer').style.display = 'block';
+                    };
 
-            toggleRecording() {
-                if (!this.isRecording) {
-                    this.startRecording();
-                } else {
-                    this.stopRecording();
-                }
-            }
-
-            startRecording() {
-                if (document.getElementById('entry-type').value === 'voice') {
+                    this.mediaRecorder.start();
                     this.recognition.start();
+                    this.startTimer();
+
                     document.querySelector('.recording-controls').classList.add('recording');
                     document.getElementById('recordButton').textContent = 'Stop Recording';
                     document.getElementById('recordingStatus').textContent = 'Recording...';
                     this.isRecording = true;
-                }
-            }
-
-            stopRecording() {
-                if (this.isRecording) {
-                    this.recognition.stop();
-                    document.querySelector('.recording-controls').classList.remove('recording');
-                    document.getElementById('recordButton').textContent = 'Start Recording';
-                    document.getElementById('recordingStatus').textContent = '';
-                    this.isRecording = false;
-                }
-            }
-
-            saveEntry() {
-                const text = document.getElementById('entry-text').value;
-                if (!text.trim()) return;
-
-                const entry = {
-                    id: Date.now(),
-                    text: text,
-                    date: new Date().toISOString(),
-                    language: document.getElementById('language').value,
-                    color: this.getMonthColor(new Date().getMonth())
-                };
-
-                this.entries.unshift(entry);
-                localStorage.setItem('diaryEntries', JSON.stringify(this.entries));
-                document.getElementById('entry-text').value = '';
-                this.loadEntries();
-                this.updateInsights();
-                this.showNotification('Entry saved successfully!');
-            }
-
-            loadEntries() {
-                const entryList = document.getElementById('entryList');
-                entryList.innerHTML = '';
-
-                this.entries.forEach(entry => {
-                    const entryElement = this.createEntryElement(entry);
-                    entryList.appendChild(entryElement);
+                })
+                .catch(error => {
+                    console.error('Error accessing microphone:', error);
+                    this.showNotification('Error accessing microphone. Please check permissions.');
                 });
-            }
+        }
+    }
 
-            createEntryElement(entry) {
-                const div = document.createElement('div');
-                div.className = 'entry-card';
-                div.style.borderLeft = `4px solid ${entry.color}`;
+    stopRecording() {
+        if (this.isRecording) {
+            this.recognition.stop();
+            this.mediaRecorder.stop();
+            this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            clearInterval(this.recordingTimer);
+            document.getElementById('recordingTimer').textContent = '';
+            document.querySelector('.recording-controls').classList.remove('recording');
+            document.getElementById('recordButton').textContent = 'Start Recording';
+            document.getElementById('recordingStatus').textContent = '';
+            this.isRecording = false;
+        }
+    }
 
-                const date = new Date(entry.date);
-                div.innerHTML = `
-                    <div class="entry-meta">
-                        ${date.toLocaleDateString()} ${date.toLocaleTimeString()}
-                        <span class="language-tag">${this.getLanguageName(entry.language)}</span>
-                    </div>
-                    <div class="entry-content">${entry.text}</div>
-                `;
+    startTimer() {
+        this.recordingDuration = 0;
+        this.recordingTimer = setInterval(() => {
+            this.recordingDuration++;
+            const minutes = Math.floor(this.recordingDuration / 60);
+            const seconds = this.recordingDuration % 60;
+            document.getElementById('recordingTimer').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }, 1000);
+    }
 
-                return div;
-            }
+    saveAudioFile() {
+        const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const language = document.getElementById('language').value;
+        const filename = `diary-recording-${language}-${timestamp}.wav`;
+        
+        const downloadLink = document.createElement('a');
+        downloadLink.href = URL.createObjectURL(audioBlob);
+        downloadLink.download = filename;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        this.showNotification('Audio file saved successfully!');
+    }
 
-            searchEntries(query) {
-                const filtered = this.entries.filter(entry =>
-                    entry.text.toLowerCase().includes(query.toLowerCase())
-                );
-                this.renderFilteredEntries(filtered);
-            }
+    saveEntry() {
+        const text = document.getElementById('entry-text').value;
+        if (!text.trim()) return;
 
-            filterByMonth() {
-                const monthFilter = document.getElementById('monthFilter').value;
-                if (!monthFilter) return;
+        const entry = {
+            id: Date.now(),
+            text: text,
+            date: new Date().toISOString(),
+            language: document.getElementById('language').value,
+            color: this.getMonthColor(new Date().getMonth())
+        };
 
-                const [year, month] = monthFilter.split('-');
-                const filtered = this.entries.filter(entry => {
-                    const entryDate = new Date(entry.date);
-                    return entryDate.getFullYear() === parseInt(year) &&
-                           entryDate.getMonth() === parseInt(month) - 1;
-                });
-                this.renderFilteredEntries(filtered);
-            }
+        this.entries.unshift(entry);
+        localStorage.setItem('diaryEntries', JSON.stringify(this.entries));
+        document.getElementById('entry-text').value = '';
+        this.loadEntries();
+        this.updateInsights();
+        this.showNotification('Entry saved successfully!');
+    }
 
-            renderFilteredEntries(entries) {
-                const entryList = document.getElementById('entryList');
-                entryList.innerHTML = '';
-                entries.forEach(entry => {
-                    const entryElement = this.createEntryElement(entry);
-                    entryList.appendChild(entryElement);
-                });
-            }
+    loadEntries() {
+        const entryList = document.getElementById('entryList');
+        entryList.innerHTML = '';
+        this.entries.forEach(entry => {
+            const entryElement = this.createEntryElement(entry);
+            entryList.appendChild(entryElement);
+        });
+    }
 
-            getMonthColor(month) {
-                const colors = [
-                    '#FF9AA2', '#FFB7B2', '#FFDAC1', '#E2F0CB',
-                    '#B5EAD7', '#C7CEEA', '#E2D1F9', '#FFE5D9',
-                    '#FCF6BD', '#D4F1F4', '#E8E8E8', '#FFC2CD'
-                ];
-                return colors[month];
-            }
+    createEntryElement(entry) {
+        const div = document.createElement('div');
+        div.className = 'entry-card';
+        div.style.borderLeft = `4px solid ${entry.color}`;
 
-            getLanguageName(code) {
-                const languages = {
-                    'en-US': 'English',
-                    'hi-IN': 'Hindi',
-                    'as-IN': 'Assamese'
-                };
-                return languages[code] || code;
-            }
+        const date = new Date(entry.date);
+        const settings = this.languageSettings[entry.language];
+        const fontClass = settings ? settings.fontClass : 'lang-en';
 
-            updateLanguage() {
-                if (this.recognition) {
-                    this.recognition.lang = document.getElementById('language').value;
-                }
-            }
+        div.innerHTML = `
+            <div class="entry-meta">
+                ${date.toLocaleDateString()} ${date.toLocaleTimeString()}
+                <span class="language-tag">${this.getLanguageName(entry.language)}</span>
+            </div>
+            <div class="entry-content ${fontClass}">${entry.text}</div>
+        `;
 
-            setupReminders() {
-                // Check if we should show a reminder (once per day)
-                const lastReminder = localStorage.getItem('lastReminder');
-                const today = new Date().toDateString();
+        return div;
+    }
 
-                if (lastReminder !== today) {
-                    this.showNotification('Don\'t forget to write in your diary today!');
-                    localStorage.setItem('lastReminder', today);
-                }
-            }
+    getMonthColor(month) {
+        const colors = [
+            '#FF9AA2', '#FFB7B2', '#FFDAC1', '#E2F0CB',
+            '#B5EAD7', '#C7CEEA', '#E2D1F9', '#FFE5D9',
+            '#FCF6BD', '#D4F1F4', '#E8E8E8', '#FFC2CD'
+        ];
+        return colors[month];
+    }
 
-            showNotification(message) {
-                const notification = document.getElementById('notification');
-                notification.textContent = message;
-                notification.style.display = 'block';
+    searchEntries(query) {
+        const filtered = this.entries.filter(entry =>
+            entry.text.toLowerCase().includes(query.toLowerCase())
+        );
+        this.renderFilteredEntries(filtered);
+    }
 
-                setTimeout(() => {
-                    notification.style.display = 'none';
-                }, 3000);
-            }
+    filterByMonth() {
+        const monthFilter = document.getElementById('monthFilter').value;
+        if (!monthFilter) return;
 
-            updateInsights() {
-                const insights = document.getElementById('insights');
-                const totalEntries = this.entries.length;
-                const entriesByLanguage = this.entries.reduce((acc, entry) => {
-                    acc[entry.language] = (acc[entry.language] || 0) + 1;
-                    return acc;
-                }, {});
+        const [year, month] = monthFilter.split('-');
+        const filtered = this.entries.filter(entry => {
+            const entryDate = new Date(entry.date);
+            return entryDate.getFullYear() === parseInt(year) &&
+                   entryDate.getMonth() === parseInt(month) - 1;
+        });
+        this.renderFilteredEntries(filtered);
+    }
 
-                insights.innerHTML = `
-                    <h3>Your Journaling Insights</h3>
-                    <p>Total Entries: ${totalEntries}</p>
-                    <p>Entries by Language:</p>
-                    ${Object.entries(entriesByLanguage).map(([lang, count]) => `
-                        <div>${this.getLanguageName(lang)}: ${count}</div>
-                    `).join('')}
-                `;
-            }
+    renderFilteredEntries(entries) {
+        const entryList = document.getElementById('entryList');
+        entryList.innerHTML = '';
+        entries.forEach(entry => {
+            const entryElement = this.createEntryElement(entry);
+            entryList.appendChild(entryElement);
+        });
+    }
 
-            checkLock() {
-                const isLocked = localStorage.getItem('diaryLocked') === 'true';
-                if (isLocked) {
-                    const password = prompt('Enter your password to unlock the diary:');
-                    if (password !== localStorage.getItem('diaryPassword')) {
-                        alert('Incorrect password');
-                        this.checkLock();
-                        return;
-                    }
-                }
+    updateLanguage() {
+        if (this.recognition) {
+            this.recognition.lang = document.getElementById('language').value;
+            this.updateLanguageIndicator();
+        }
+    }
+
+    getLanguageName(code) {
+        return this.languageSettings[code]?.label || code;
+    }
+
+    setupReminders() {
+        const lastReminder = localStorage.getItem('lastReminder');
+        const today = new Date().toDateString();
+
+        if (lastReminder !== today) {
+            this.showNotification('Don\'t forget to write in your diary today!');
+            localStorage.setItem('lastReminder', today);
+        }
+    }
+
+    updateInsights() {
+        const insights = document.getElementById('insights');
+        const totalEntries = this.entries.length;
+        const entriesByLanguage = this.entries.reduce((acc, entry) => {
+            acc[entry.language] = (acc[entry.language] || 0) + 1;
+            return acc;
+        }, {});
+
+        insights.innerHTML = `
+            <h3>Your Journaling Insights</h3>
+            <p>Total Entries: ${totalEntries}</p>
+            <p>Entries by Language:</p>
+            ${Object.entries(entriesByLanguage).map(([lang, count]) => `
+                <div>${this.getLanguageName(lang)}: ${count}</div>
+            `).join('')}
+        `;
+    }
+
+    showNotification(message) {
+        const notification = document.getElementById('notification');
+        notification.textContent = message;
+        notification.style.display = 'block';
+
+        setTimeout(() => {
+            notification.style.display = 'none';
+        }, 3000);
+    }
+
+    checkLock() {
+        const isLocked = localStorage.getItem('diaryLocked') === 'true';
+        if (isLocked) {
+            const password = prompt('Enter your password to unlock the diary:');
+            if (password !== localStorage.getItem('diaryPassword')) {
+                alert('Incorrect password');
+                this.checkLock();
+                return;
             }
         }
+    }
+}
 
-        // Initialize the app when the page loads
-        window.addEventListener('load', () => {
-            const app = new DiaryApp();
-        });
+// Initialize the app when the page loads
+window.addEventListener('load', () => {
+    const app = new DiaryApp();
+}); 
     </script>
 </body>
-</html>
+    </html>
